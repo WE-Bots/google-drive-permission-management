@@ -6,6 +6,11 @@ collaborators to ensure that the list matches a provided list of shared people.
 For files owned by a different user, the file can be copied and the old file
 deleted.
 
+## Required Software
+
+* Python 2.7 or above
+* Pip package manager
+
 ## Setup
 
 1. Create new project and enable Google Drive API access from
