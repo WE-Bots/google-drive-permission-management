@@ -117,7 +117,7 @@ def main():
     # Call the Drive v3 API to get all files for processing
     print("Fixing owners and sharing permissions in files and folders...")
     file_request = ops.service.files().list(pageSize=1000, q=ops.subfolder_filter,
-                                            fields="nextPageToken," + GoogleDriveOperations.STD_FIELDS)
+                                            fields="nextPageToken," + GoogleDriveOperations.STD_FIELDS_LIST)
 
     # Batch all the permission changes, since they don't have dependencies
     perm_batch = GoogleDriveOperations.\

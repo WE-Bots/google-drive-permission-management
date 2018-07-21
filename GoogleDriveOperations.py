@@ -40,8 +40,9 @@ class CollaboratorType(Enum):
 class GoogleDriveOperations(object):
     SCOPES = "https://www.googleapis.com/auth/drive"
     ACCOUNT = "webots@eng.uwo.ca"
-    STD_FIELDS = "files(name,id,parents,owners,kind)"
-    _STD_FIELDS = "files(name,id,parents,owners,kind)"
+    STD_FIELDS = "name,id,parents,owners,kind"
+    STD_FIELDS_LIST = "files({0})".format(STD_FIELDS)
+    _STD_FIELDS_LIST = STD_FIELDS_LIST
 
     class EnhancedBatchHttpRequest(BatchHttpRequest):
         """Google batch request object that automatically calls execute on itself when too many calls are batched."""
@@ -232,7 +233,7 @@ class GoogleDriveOperations(object):
         if drive_obj["kind"] == FileKind.FOLDER:
             obj_request = self._service.files().list(pageSize=1000,
                                                      q="'{0}' in parents".format(drive_obj["id"]),
-                                                     fields="nextPageToken," + self._STD_FIELDS)
+                                                     fields="nextPageToken," + self._STD_FIELDS_LIST)
 
             for sub_obj in google_pager(obj_request, "files", self._service.files().list_next):
                 move_and_del_batch.add(self._service.files().update(fileId=sub_obj["id"],
@@ -260,7 +261,8 @@ class GoogleDriveOperations(object):
             top_id = self._service.files().list(pageSize=1,
                                                 q="mimeType = 'application/vnd.google-apps.folder' "
                                                   "and name = '{0}'".format(folder),
-                                                fields="nextPageToken," + self._STD_FIELDS).execute()["files"][0]["id"]
+                                                fields="nextPageToken," + self._STD_FIELDS_LIST)\
+                .execute()["files"][0]["id"]
         except IndexError:
             # This could error out with bad name
             raise FileNotFoundError("Folder '{0}' was not found.".format(folder))
