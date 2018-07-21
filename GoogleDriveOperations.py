@@ -179,7 +179,7 @@ class GoogleDriveOperations(object):
             return
 
         command = self._service.permissions().create(fileId=file_resource["id"],
-                                                     body={'emailAddress': email, 'role': role})
+                                                     body={'emailAddress': email, 'role': role.value})
 
         if batch is None:
             command.execute()
