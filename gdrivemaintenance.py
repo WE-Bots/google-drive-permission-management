@@ -119,8 +119,11 @@ def main():
     file_request = ops.service.files().list(pageSize=1000, q=ops.subfolder_filter,
                                             fields="nextPageToken," + GoogleDriveOperations.STD_FIELDS)
 
+    # Batch all the permission changes, since they don't have dependencies
+    perm_batch = GoogleDriveOperations.\
+        EnhancedBatchHttpRequest(ops.service, callback=lambda rid, resp, error: print(error, file=sys.stderr))
+
     for drive_obj in google_pager(file_request, "files", ops.service.files().list_next):
-        # TODO: Batch more effectively
         # Fix ownership if desired, then fix permissions
         try:
             if not ops.is_owner(drive_obj) and args.take_ownership:
@@ -133,10 +136,18 @@ def main():
                 if not args.take_ownership:
                     aug_collaborators.add(ops.get_owner_email(drive_obj))
 
-                modify_permissions(ops, drive_obj, aug_collaborators, args.disable_links, args.what_if)
+                modify_permissions(ops,
+                                   drive_obj,
+                                   aug_collaborators,
+                                   args.disable_links,
+                                   args.what_if,
+                                   batch=perm_batch)
         except googleapiclient.errors.HttpError as err:
             print("Error modifying state for '{0}', skipping...".format(drive_obj["name"]), file=sys.stderr)
             print(err, file=sys.stderr)
+
+    # Execute all permission changes
+    perm_batch.execute()
 
 
 if __name__ == "__main__":
