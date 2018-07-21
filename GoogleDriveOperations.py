@@ -1,11 +1,11 @@
 from apiclient.discovery import build
-import googleapiclient.errors
 from httplib2 import Http
 from oauth2client import file, client, tools
 
 import sys
 from enum import Enum
 from collections import namedtuple
+from googleapiclient.http import BatchHttpRequest
 
 
 def google_pager(req_obj, iter_resp_field, next_page_func):
@@ -42,6 +42,24 @@ class GoogleDriveOperations(object):
     ACCOUNT = "webots@eng.uwo.ca"
     STD_FIELDS = "files(name,id,parents,owners,kind)"
     _STD_FIELDS = "files(name,id,parents,owners,kind)"
+
+    class EnhancedBatchHttpRequest(BatchHttpRequest):
+        """Google batch request object that automatically calls execute on itself when too many calls are batched."""
+        CAP = 800
+
+        def __init__(self, service, **kwargs):
+            if "batch_uri" not in kwargs:
+                kwargs["batch_uri"] = service.new_batch_http_request()._batch_uri
+            super(GoogleDriveOperations.EnhancedBatchHttpRequest, self).__init__(**kwargs)
+            self._counter = 0
+
+        def add(self, *args, **kwargs):
+            super(GoogleDriveOperations.EnhancedBatchHttpRequest, self).add(*args, **kwargs)
+            self._counter += 1
+
+            if self._counter >= self.CAP:
+                self.execute()
+                self._counter = 0
 
     def __init__(self, folder):
         self._service = self._setup()
@@ -207,7 +225,8 @@ class GoogleDriveOperations(object):
         new_obj_meta = self._service.files().get(fileId=new_obj_results["id"], fields=self._STD_FIELDS).execute()
 
         # Batch the movement of files and folder deletion
-        move_and_del_batch = self._service.new_batch_http_request(lambda rid, resp, err: print(err, file=sys.stderr))
+        move_and_del_batch = GoogleDriveOperations.\
+            EnhancedBatchHttpRequest(self._service, callback=lambda rid, resp, err: print(err, file=sys.stderr))
 
         # If object is a folder, move all child files/folders to new folder
         if drive_obj["kind"] == FileKind.FOLDER:
