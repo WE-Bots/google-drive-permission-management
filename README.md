@@ -8,7 +8,7 @@ deleted.
 
 ## Required Software
 
-* Python 3.3 or above
+* Python 3.4 or above
 * Pip package manager
 
 ## Setup
