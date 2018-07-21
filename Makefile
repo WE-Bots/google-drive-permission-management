@@ -3,7 +3,7 @@ init:
 
 lint:
 	pip install -r requirements-test.txt
-	find . -maxdepth 1 -name \*.py -exec pycodestyle --ignore E501 {} +
+	find . -maxdepth 1 -name \*.py -exec pycodestyle --max-line-length=120 --statistics --count {} +
 
 test:
 	tox
