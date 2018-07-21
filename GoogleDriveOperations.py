@@ -58,7 +58,7 @@ class CollaboratorType(Enum):
 
 class EnhancedBatchHttpRequest(BatchHttpRequest):
     """Google batch request object that automatically calls execute on itself when too many calls are batched."""
-    CAP = 800
+    CAP = 500
 
     def __init__(self, service, **kwargs):
         if "batch_uri" not in kwargs:

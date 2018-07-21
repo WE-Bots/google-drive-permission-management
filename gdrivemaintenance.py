@@ -122,7 +122,7 @@ def main():
                                             fields="nextPageToken," + GoogleDriveOperations.STD_FIELDS_LIST)
 
     # Batch all the permission changes, since they don't have dependencies
-    perm_batch = EnhancedBatchHttpRequest(ops.service, callback=lambda rid, resp, error: print(error, file=sys.stderr))
+    perm_batch = EnhancedBatchHttpRequest(ops.service, callback=perm_edit_callback)
 
     for drive_obj in google_pager(file_request, "files", ops.service.files().list_next):
         # Fix ownership if desired, then fix permissions
