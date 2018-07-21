@@ -90,8 +90,7 @@ class GoogleDriveOperations(object):
         :param file_resource: The file to get the owner's email for.
         :return: The owner's email
         """
-
-        perms = self.get_permissions(file_resource)
+        perms = self.get_permissions(file_resource)     # Ignore batching in here, should only be a special case
         for perm in perms:
             if perm["role"] == "owner":
                 return perm["emailAddress"]
@@ -108,6 +107,7 @@ class GoogleDriveOperations(object):
         if "owners" not in file_resource:
             owners = self._service.files().get(fileId=file_resource["id"],
                                                fields=self._STD_FIELDS).execute().get("owners", [])
+            # Ignore batching in here, can be dealt with in caller's side
         else:
             owners = file_resource.get("owners", [])
 
@@ -206,6 +206,9 @@ class GoogleDriveOperations(object):
                                                      body={"parents": par_to_remove}).execute()
         new_obj_meta = self._service.files().get(fileId=new_obj_results["id"], fields=self._STD_FIELDS).execute()
 
+        # Batch the movement of files and folder deletion
+        move_and_del_batch = self._service.new_batch_http_request(lambda rid, resp, err: print(err, file=sys.stderr))
+
         # If object is a folder, move all child files/folders to new folder
         if drive_obj["kind"] == FileKind.FOLDER:
             obj_request = self._service.files().list(pageSize=1000,
@@ -213,11 +216,15 @@ class GoogleDriveOperations(object):
                                                      fields="nextPageToken," + self._STD_FIELDS)
 
             for sub_obj in google_pager(obj_request, "files", self._service.files().list_next):
-                self._service.files().update(fileId=sub_obj["id"], addParents=new_obj_meta["id"],
-                                             removeParents=drive_obj["id"])     # TODO: Batch
+                move_and_del_batch.add(self._service.files().update(fileId=sub_obj["id"],
+                                                                    addParents=new_obj_meta["id"],
+                                                                    removeParents=drive_obj["id"]))
 
         # Remove the old object from the folder tree
-        self._service.files.update(fileId=drive_obj["id"], removeParents=par_to_remove).execute()
+        move_and_del_batch.add(self._service.files.update(fileId=drive_obj["id"], removeParents=par_to_remove))
+
+        # Execute batch
+        move_and_del_batch.execute()
 
         return new_obj_meta
 
