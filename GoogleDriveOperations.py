@@ -35,17 +35,17 @@ class RenameGoogleObject(object):
 
     def __enter__(self):
         # Rename drive object
-        self._service().files().update(fileId=self._drive_obj["id"],
-                                       body={"name": "Old - " + self._drive_obj["name"]}).execute()
+        self._service.files().update(fileId=self._drive_obj["id"],
+                                     body={"name": "Old - " + self._drive_obj["name"]}).execute()
         return self._drive_obj
 
     def __exit__(self, type, value, traceback):
         # Undo drive object renaming
-        self._service().files().update(fileId=self._drive_obj["id"],
-                                       body={"name": self._drive_obj["name"]}).execute()
+        self._service.files().update(fileId=self._drive_obj["id"],
+                                     body={"name": self._drive_obj["name"]}).execute()
 
 
-class FileKind(Enum):
+class MIMEType(Enum):
     GOOGLE_OBJECT = "application/vnd.google-apps."
     FOLDER = "application/vnd.google-apps.folder"
 
@@ -59,9 +59,10 @@ class CollaboratorType(Enum):
 class GoogleDriveOperations(object):
     SCOPES = "https://www.googleapis.com/auth/drive"
     ACCOUNT = "webots@eng.uwo.ca"
-    STD_FIELDS = "name,id,parents,owners,kind"
+    STD_FIELDS = "name,id,parents,owners,kind,mimeType"
+    _STD_FIELDS = "name,id,parents,owners,kind,mimeType"
     STD_FIELDS_LIST = "files({0})".format(STD_FIELDS)
-    _STD_FIELDS_LIST = STD_FIELDS_LIST
+    _STD_FIELDS_LIST = "files({0})".format(STD_FIELDS)
 
     class EnhancedBatchHttpRequest(BatchHttpRequest):
         """Google batch request object that automatically calls execute on itself when too many calls are batched."""
@@ -216,17 +217,25 @@ class GoogleDriveOperations(object):
         else:
             batch.add(command)
 
+    @staticmethod
+    def _default_batch_callback(rid, resp, err):
+        if err is not None:
+            print(err, file=sys.stderr)
+
     def _take_ownership_folder(self, drive_obj, parents):
         # Rename old folder to prevent naming conflicts
         with RenameGoogleObject(drive_obj, self._service):
             # Create new folder
-            new_folder_results = self._service().files().create(body={"parents": parents, "name": drive_obj["name"]},
-                                                                media_mime_type=FileKind.FOLDER)
-            new_folder_meta = self._service.files().get(fileId=new_folder_results["id"], fields=self._STD_FIELDS).execute()
+            new_folder_results = self._service.files().create(body={"parents": parents,
+                                                                    "name": drive_obj["name"],
+                                                                    "mimeType": MIMEType.FOLDER.value
+                                                                    }).execute()
+            new_folder_meta = self._service.files().get(fileId=new_folder_results["id"],
+                                                        fields=self._STD_FIELDS).execute()
 
             # Batch the movement of files and folder deletion
-            move_and_del_batch = GoogleDriveOperations.\
-                EnhancedBatchHttpRequest(self._service, callback=lambda rid, resp, err: print(err, file=sys.stderr))
+            move_batch = GoogleDriveOperations.\
+                EnhancedBatchHttpRequest(self._service, callback=self._default_batch_callback)
 
             # Move all child files/folders to new folder
             obj_request = self._service.files().list(pageSize=1000,
@@ -234,15 +243,17 @@ class GoogleDriveOperations(object):
                                                      fields="nextPageToken," + self._STD_FIELDS_LIST)
 
             for sub_obj in google_pager(obj_request, "files", self._service.files().list_next):
-                move_and_del_batch.add(self._service.files().update(fileId=sub_obj["id"],
-                                                                    addParents=new_folder_meta["id"],
-                                                                    removeParents=drive_obj["id"]))
+                move_batch.add(self._service.files().update(fileId=sub_obj["id"],
+                                                            addParents=new_folder_meta["id"],
+                                                            removeParents=drive_obj["id"]))
+
+            move_batch.execute()
 
             # Remove the old object from the folder tree
-            move_and_del_batch.add(self._service.files.update(fileId=drive_obj["id"],
-                                                              removeParents=parents))
+            self._service.files().update(fileId=drive_obj["id"],
+                                         removeParents=",".join(parents)).execute()
 
-            move_and_del_batch.execute()
+            return new_folder_meta
 
     def take_ownership(self, drive_obj, what_if):
         """Takes ownership of an object by creating a copy and removing the original from the folder.
@@ -268,18 +279,20 @@ class GoogleDriveOperations(object):
         par_to_remove = [item for item in parents.intersection(self._subfolder_ids)]
 
         # If folder, use folder take ownership process
-        if drive_obj["kind"] == FileKind.FOLDER:
-            return self._take_ownership_folder(drive_obj, parents)
+        if drive_obj["mimeType"] == MIMEType.FOLDER.value:
+            return self._take_ownership_folder(drive_obj, par_to_remove)
 
         # Rename old object to prevent naming conflicts
         with RenameGoogleObject(drive_obj, self._service):
             # Copy object to same places
             new_obj_results = self._service.files().copy(fileId=drive_obj["id"],
-                                                         body={"parents": par_to_remove}).execute()
+                                                         body={"parents": par_to_remove,
+                                                               "name": drive_obj["name"]
+                                                               }).execute()
             new_obj_meta = self._service.files().get(fileId=new_obj_results["id"], fields=self._STD_FIELDS).execute()
 
             # Remove the old object from the folder tree
-            self._service.files.update(fileId=drive_obj["id"], removeParents=par_to_remove).execute()
+            self._service.files().update(fileId=drive_obj["id"], removeParents=",".join(par_to_remove)).execute()
 
             return new_obj_meta
 

@@ -2,7 +2,7 @@
 
 import sys
 import argparse
-from GoogleDriveOperations import FileKind, GoogleDriveOperations, google_pager
+from GoogleDriveOperations import GoogleDriveOperations, google_pager
 import googleapiclient.errors
 
 
@@ -44,7 +44,9 @@ def argument_parsing():
 
 
 def perm_edit_callback(id, response, exception):
-    print(exception, file=sys.stderr)
+    if exception is not None:
+        print("Batch execution callback failed:", file=sys.stderr)
+        print(exception, file=sys.stderr)
 
 
 def modify_permissions(api_client, file_resource, collaborators, disable_links, what_if, permissions=None, batch=None):
