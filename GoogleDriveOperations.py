@@ -5,6 +5,7 @@ from oauth2client import file, client, tools
 
 import sys
 from enum import Enum
+from collections import namedtuple
 
 
 def google_pager(req_obj, iter_resp_field, next_page_func):
@@ -44,7 +45,8 @@ class GoogleDriveOperations(object):
 
     def __init__(self, folder):
         self._service = self._setup()
-        self._userinfo = self._service.about().get(fields="user(emailAddress, permissionId)").execute().get("user")
+        temp_user_info = self._service.about().get(fields="user(emailAddress, permissionId)").execute().get("user")
+        self._userinfo = namedtuple("UserInfo", temp_user_info.keys())(*temp_user_info.values())
         self._subfolder_ids, self._subfolder_filter = self.enumerate_subfolder_ids(folder)
 
         # Setup publicly-available variables
@@ -82,6 +84,20 @@ class GoogleDriveOperations(object):
 
         return permissions
 
+    def get_owner_email(self, file_resource):
+        """Get the email of the file owner.
+
+        :param file_resource: The file to get the owner's email for.
+        :return: The owner's email
+        """
+
+        perms = self.get_permissions(file_resource)
+        for perm in perms:
+            if perm["role"] == "owner":
+                return perm["emailAddress"]
+
+        raise ValueError("Cannot find owner email address for '{0}'.".format(file_resource["name"]))
+
     def is_owner(self, file_resource):
         """Checks if the current user owns the file.
 
@@ -96,7 +112,7 @@ class GoogleDriveOperations(object):
             owners = file_resource.get("owners", [])
 
         for owner in owners:
-            if owner["permissionId"] == self._userinfo["permissionId"]:
+            if owner["permissionId"] == self._userinfo.permissionId:
                 return True
         return False
 
@@ -178,7 +194,7 @@ class GoogleDriveOperations(object):
 
         # Check if file is already owned by user
         if self.is_owner(drive_obj):
-            print("'{0}' is already owned by '{1}'.".format(drive_obj["name"], self._userinfo["emailAddress"]))
+            print("'{0}' is already owned by '{1}'.".format(drive_obj["name"], self._userinfo.emailAddress))
             return drive_obj
 
         # Determine parents to remove from original file

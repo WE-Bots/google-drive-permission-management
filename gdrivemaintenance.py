@@ -84,7 +84,7 @@ def modify_permissions(api_client, file_resource, collaborators, disable_links, 
 
     # Add wanted permissions as specified by requested state
     wanted_collaborators = collaborators
-    existing_collaborators = set([perm["emailAddress"] for perm in permissions])
+    existing_collaborators = set([perm["emailAddress"] for perm in permissions if "emailAddress" in perm])
     missing_collaborators = wanted_collaborators - existing_collaborators
 
     for collab_email in missing_collaborators:
@@ -108,8 +108,8 @@ def main():
         ops = GoogleDriveOperations(args.folder)
 
         # Add current user to collaborators if not present
-        if ops.userinfo["emailAddress"] not in args.collaborators:
-            args.collaborators.add(ops.userinfo["emailAddress"])
+        if ops.userinfo.emailAddress not in args.collaborators:
+            args.collaborators.add(ops.userinfo.emailAddress)
 
         # Call the Drive v3 API to get all files for processing
         print("Fixing owners and sharing permissions in files and folders...")
@@ -123,9 +123,14 @@ def main():
                 if not ops.is_owner(drive_obj) and args.take_ownership:
                     drive_obj = ops.take_ownership(drive_obj, args.what_if)
 
-                if drive_obj is not None:
-                    # TODO: If the ownership changes are not requested, add the owner to the allowed collaborators list
-                    modify_permissions(ops, drive_obj, args.collaborators, args.disable_links, args.what_if)
+                if drive_obj is not None:   # None is possible when "What-If" is requested
+
+                    # If the ownership changes are not requested, add the owner to the allowed collaborators list
+                    aug_collaborators = set(args.collaborators)
+                    if not args.take_ownership:
+                        aug_collaborators.add(ops.get_owner_email(drive_obj))
+
+                    modify_permissions(ops, drive_obj, aug_collaborators, args.disable_links, args.what_if)
             except googleapiclient.errors.HttpError as err:
                 print("Error modifying state for '{0}', skipping...".format(drive_obj["name"]), file=sys.stderr)
                 print(err, file=sys.stderr)
