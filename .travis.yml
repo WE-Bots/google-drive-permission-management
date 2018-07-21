@@ -5,7 +5,7 @@ python:
     - "3.4"
     - "3.5"
     - "3.6"
-install: pip install tox-travis pycodetest
+install: pip install tox-travis pycodestyle
 script:
   - find . -maxdepth 1 -name \*.py -exec pycodestyle --ignore E501 {} +
   - tox
