@@ -56,6 +56,25 @@ class CollaboratorType(Enum):
     COMMENTER = "commenter"
 
 
+class EnhancedBatchHttpRequest(BatchHttpRequest):
+    """Google batch request object that automatically calls execute on itself when too many calls are batched."""
+    CAP = 800
+
+    def __init__(self, service, **kwargs):
+        if "batch_uri" not in kwargs:
+            kwargs["batch_uri"] = service.new_batch_http_request()._batch_uri
+        super(EnhancedBatchHttpRequest, self).__init__(**kwargs)
+        self._counter = 0
+
+    def add(self, *args, **kwargs):
+        super(EnhancedBatchHttpRequest, self).add(*args, **kwargs)
+        self._counter += 1
+
+        if self._counter >= self.CAP:
+            self.execute()
+            self._counter = 0
+
+
 class GoogleDriveOperations(object):
     SCOPES = "https://www.googleapis.com/auth/drive"
     ACCOUNT = "webots@eng.uwo.ca"
@@ -63,24 +82,6 @@ class GoogleDriveOperations(object):
     _STD_FIELDS = "name,id,parents,owners,kind,mimeType"
     STD_FIELDS_LIST = "files({0})".format(STD_FIELDS)
     _STD_FIELDS_LIST = "files({0})".format(STD_FIELDS)
-
-    class EnhancedBatchHttpRequest(BatchHttpRequest):
-        """Google batch request object that automatically calls execute on itself when too many calls are batched."""
-        CAP = 800
-
-        def __init__(self, service, **kwargs):
-            if "batch_uri" not in kwargs:
-                kwargs["batch_uri"] = service.new_batch_http_request()._batch_uri
-            super(GoogleDriveOperations.EnhancedBatchHttpRequest, self).__init__(**kwargs)
-            self._counter = 0
-
-        def add(self, *args, **kwargs):
-            super(GoogleDriveOperations.EnhancedBatchHttpRequest, self).add(*args, **kwargs)
-            self._counter += 1
-
-            if self._counter >= self.CAP:
-                self.execute()
-                self._counter = 0
 
     def __init__(self, folder):
         self._service = self._setup()
@@ -223,6 +224,12 @@ class GoogleDriveOperations(object):
             print(err, file=sys.stderr)
 
     def _take_ownership_folder(self, drive_obj, parents):
+        """Take ownership of a folder by making a new folder and moving it's contents.
+
+        :param drive_obj: The folder to take ownership of
+        :param parents: The parents of this folder that are within the scope of the top-level folder.
+        :return: The new drive object representing the new folder.
+        """
         # Rename old folder to prevent naming conflicts
         with RenameGoogleObject(drive_obj, self._service):
             # Create new folder
@@ -234,8 +241,7 @@ class GoogleDriveOperations(object):
                                                         fields=self._STD_FIELDS).execute()
 
             # Batch the movement of files and folder deletion
-            move_batch = GoogleDriveOperations.\
-                EnhancedBatchHttpRequest(self._service, callback=self._default_batch_callback)
+            move_batch = EnhancedBatchHttpRequest(self._service, callback=self._default_batch_callback)
 
             # Move all child files/folders to new folder
             obj_request = self._service.files().list(pageSize=1000,

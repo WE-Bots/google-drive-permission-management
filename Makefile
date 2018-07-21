@@ -2,6 +2,7 @@ init:
 	pip install -r requirements.txt
 
 test:
-	echo "Not setup"
+    pip install -r requirements-test.txt
+	pytest
 
 all: init test
