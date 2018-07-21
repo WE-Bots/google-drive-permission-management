@@ -8,7 +8,7 @@ deleted.
 
 ## Required Software
 
-* Python 2.7 or above
+* Python 3.3 or above
 * Pip package manager
 
 ## Setup
@@ -21,9 +21,11 @@ the word "Google" in it), and save as `client_id.json`
 4. Run program
 
 ```bash
-# Example: Take ownership of files, disable link sharing, and remove all collaborators (set only yourself as collaborator):
-python gdrivemaintenance.py "WE Bots" -c webots@eng.uwo.ca -t -l
+# Example: Take ownership of files, disable link sharing, and remove all collaborators:
+python gdrivemaintenance.py "WE Bots" -t -l
 
+# Example: Take ownership of files, and set collaborators to just WE Bots:
+python gdrivemaintenance.py "WE Bots" -c webots@eng.uwo.ca -t
 ```
 
 ## Usage
@@ -45,11 +47,10 @@ optional arguments:
   -h, --help            show this help message and exit
   --collaborators email [email ...], -c email [email ...]
                         the collaborators that should exist on the
-                        files/folders. If blank, stops sharing.
+                        files/folders. If blank, removes all collaborators.
   --take-ownership, -t  should files/folders have their ownership changed
   --disable-links, -l   Disable all sharing by links
   --what-if             shows what would happen, without actually executing
                         changes to Google Drive
   --version             show program's version number and exit
-
 ```
