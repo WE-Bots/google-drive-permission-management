@@ -27,7 +27,26 @@ def google_pager(req_obj, iter_resp_field, next_page_func):
         req_obj = next_page_func(req_obj, results)
 
 
+class RenameGoogleObject(object):
+    """Renames a given Google Drive object temporarily to prevent naming issues."""
+    def __init__(self, drive_obj, api_object):
+        self._drive_obj = drive_obj
+        self._service = api_object
+
+    def __enter__(self):
+        # Rename drive object
+        self._service().files().update(fileId=self._drive_obj["id"],
+                                       body={"name": "Old - " + self._drive_obj["name"]}).execute()
+        return self._drive_obj
+
+    def __exit__(self, type, value, traceback):
+        # Undo drive object renaming
+        self._service().files().update(fileId=self._drive_obj["id"],
+                                       body={"name": self._drive_obj["name"]}).execute()
+
+
 class FileKind(Enum):
+    GOOGLE_OBJECT = "application/vnd.google-apps."
     FOLDER = "application/vnd.google-apps.folder"
 
 
@@ -197,8 +216,36 @@ class GoogleDriveOperations(object):
         else:
             batch.add(command)
 
+    def _take_ownership_folder(self, drive_obj, parents):
+        # Rename old folder to prevent naming conflicts
+        with RenameGoogleObject(drive_obj, self._service):
+            # Create new folder
+            new_folder_results = self._service().files().create(body={"parents": parents, "name": drive_obj["name"]},
+                                                                media_mime_type=FileKind.FOLDER)
+            new_folder_meta = self._service.files().get(fileId=new_folder_results["id"], fields=self._STD_FIELDS).execute()
+
+            # Batch the movement of files and folder deletion
+            move_and_del_batch = GoogleDriveOperations.\
+                EnhancedBatchHttpRequest(self._service, callback=lambda rid, resp, err: print(err, file=sys.stderr))
+
+            # Move all child files/folders to new folder
+            obj_request = self._service.files().list(pageSize=1000,
+                                                     q="'{0}' in parents".format(drive_obj["id"]),
+                                                     fields="nextPageToken," + self._STD_FIELDS_LIST)
+
+            for sub_obj in google_pager(obj_request, "files", self._service.files().list_next):
+                move_and_del_batch.add(self._service.files().update(fileId=sub_obj["id"],
+                                                                    addParents=new_folder_meta["id"],
+                                                                    removeParents=drive_obj["id"]))
+
+            # Remove the old object from the folder tree
+            move_and_del_batch.add(self._service.files.update(fileId=drive_obj["id"],
+                                                              removeParents=parents))
+
+            move_and_del_batch.execute()
+
     def take_ownership(self, drive_obj, what_if):
-        """Takes ownership of an object by creating a copy, copying sub-objects, and removing the original from the folder.
+        """Takes ownership of an object by creating a copy and removing the original from the folder.
 
         :param drive_obj: The object to take ownership of.
         :param what_if: If the function shouldn't actually run and instead print out what it was going to do.
@@ -220,33 +267,21 @@ class GoogleDriveOperations(object):
         parents = set(drive_obj["parents"])
         par_to_remove = [item for item in parents.intersection(self._subfolder_ids)]
 
-        # Copy object to same places
-        new_obj_results = self._service.files().copy(fileId=drive_obj["id"],
-                                                     body={"parents": par_to_remove}).execute()
-        new_obj_meta = self._service.files().get(fileId=new_obj_results["id"], fields=self._STD_FIELDS).execute()
-
-        # Batch the movement of files and folder deletion
-        move_and_del_batch = GoogleDriveOperations.\
-            EnhancedBatchHttpRequest(self._service, callback=lambda rid, resp, err: print(err, file=sys.stderr))
-
-        # If object is a folder, move all child files/folders to new folder
+        # If folder, use folder take ownership process
         if drive_obj["kind"] == FileKind.FOLDER:
-            obj_request = self._service.files().list(pageSize=1000,
-                                                     q="'{0}' in parents".format(drive_obj["id"]),
-                                                     fields="nextPageToken," + self._STD_FIELDS_LIST)
+            return self._take_ownership_folder(drive_obj, parents)
 
-            for sub_obj in google_pager(obj_request, "files", self._service.files().list_next):
-                move_and_del_batch.add(self._service.files().update(fileId=sub_obj["id"],
-                                                                    addParents=new_obj_meta["id"],
-                                                                    removeParents=drive_obj["id"]))
+        # Rename old object to prevent naming conflicts
+        with RenameGoogleObject(drive_obj, self._service):
+            # Copy object to same places
+            new_obj_results = self._service.files().copy(fileId=drive_obj["id"],
+                                                         body={"parents": par_to_remove}).execute()
+            new_obj_meta = self._service.files().get(fileId=new_obj_results["id"], fields=self._STD_FIELDS).execute()
 
-        # Remove the old object from the folder tree
-        move_and_del_batch.add(self._service.files.update(fileId=drive_obj["id"], removeParents=par_to_remove))
+            # Remove the old object from the folder tree
+            self._service.files.update(fileId=drive_obj["id"], removeParents=par_to_remove).execute()
 
-        # Execute batch
-        move_and_del_batch.execute()
-
-        return new_obj_meta
+            return new_obj_meta
 
     def enumerate_subfolder_ids(self, folder):
         """Given a top-level folder name, gets folder ID and IDs of all subfolders
