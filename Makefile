@@ -1,8 +1,10 @@
 init:
 	pip install -r requirements.txt
 
-test:
-    pip install -r requirements-test.txt
-	pytest
+lint:
+	find . -maxdepth 1 -name \*.py -exec pycodestyle --ignore E501 {} +
 
-all: init test
+test:
+	tox
+
+all: init lint test
